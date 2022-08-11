@@ -69,7 +69,7 @@ def predict():
                               'Deep-CNN/Placeholder:0': img_gray
                           })
         output_text = dense_to_text(output[0])
-        output_text = {'output_text':output_text}
+        output_text = {'output_text' : output_text}
         return jsonify(output_text)
     else:
         return "Allowed image types are - png, jpg, jpeg, gif"
