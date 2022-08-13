@@ -6,30 +6,52 @@ from werkzeug.utils import secure_filename
 from scipy.ndimage import interpolation as inter
 from PIL import Image as im
 import numpy as np
-from glob import glob
+from azure.storage.blob import BlobServiceClient
 
 app = Flask(__name__)
 
-path = os.getcwd()
-UPLOAD_FOLDER = os.path.join(path, 'uploads\\')
-if not os.path.isdir(UPLOAD_FOLDER):
-    os.mkdir(UPLOAD_FOLDER)
+# Setting Up Azure Blob
 
-WORDS_UPLOAD_FOLDER = os.path.join(path, 'uploads\\words\\')
-if not os.path.isdir(WORDS_UPLOAD_FOLDER):
-    os.mkdir(WORDS_UPLOAD_FOLDER)
+connect_str = "DefaultEndpointsProtocol=https;AccountName=ulrs2117345582;AccountKey=DVpEvHHNMCfrv/J3s6XK0NEvXqWAHurPkvFUdHdldgToHndiN9AnulueYWo1kjrNf+uFQrya747k+AStmjqtpA==;EndpointSuffix=core.windows.net"
+container_name = "uploads"
 
-LINES_UPLOAD_FOLDER = os.path.join(path, 'uploads\\lines\\')
-if not os.path.isdir(LINES_UPLOAD_FOLDER):
-    os.mkdir(LINES_UPLOAD_FOLDER)
+# create a blob service client to interact with the storage account
+blob_service_client = BlobServiceClient.from_connection_string(conn_str=connect_str)
+try:
+    # get container client to interact with the container in which images will be stored
+    container_client = blob_service_client.get_container_client(container=container_name)
+    # get properties of the container to force exception to be thrown if container does not exist
+    container_client.get_container_properties()
+except Exception as e:
+    # create a container in the storage account if it does not exist
+    container_client = blob_service_client.create_container(container_name)
+
+# path = os.getcwd()
+# UPLOAD_FOLDER = os.path.join(path, 'uploads\\')
+# if not os.path.isdir(UPLOAD_FOLDER):
+#     os.mkdir(UPLOAD_FOLDER)
+#
+# WORDS_UPLOAD_FOLDER = os.path.join(path, 'uploads\\words\\')
+# if not os.path.isdir(WORDS_UPLOAD_FOLDER):
+#     os.mkdir(WORDS_UPLOAD_FOLDER)
+#
+# LINES_UPLOAD_FOLDER = os.path.join(path, 'uploads\\lines\\')
+# if not os.path.isdir(LINES_UPLOAD_FOLDER):
+#     os.mkdir(LINES_UPLOAD_FOLDER)
 
 app.secret_key = "secret key"
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-app.config['LINES_UPLOAD_FOLDER'] = LINES_UPLOAD_FOLDER
-app.config['WORDS_UPLOAD_FOLDER'] = WORDS_UPLOAD_FOLDER
+# app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+# app.config['LINES_UPLOAD_FOLDER'] = LINES_UPLOAD_FOLDER
+# app.config['WORDS_UPLOAD_FOLDER'] = WORDS_UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 
 ALLOWED_EXTENSIONS = set(['png', 'jpg', 'jpeg'])
+
+
+# Convert result from blob to numpy array of bytes
+def blob_to_array(blob):
+    arr = np.asarray(bytearray(blob), dtype=np.uint8)
+    return arr
 
 
 def allowed_file(filename):
@@ -108,14 +130,23 @@ def deskew(binary_img):
     return pix
 
 
-def save_image(img, folder, title):
-    cv.imwrite(f'{folder}/{title}.png', img)
+def save_image(img, title):
+    filename = secure_filename(f'{title}.png')
+    # cv.imwrite(f'{folder}/{title}.png', img)
+    # Upload the resized image
+    _, img_encode = cv.imencode('.png', img)
+    img_upload = img_encode.tobytes()
+    container_client.upload_blob(filename, img_upload, overwrite=True)
 
 
-
-def read_image(img, folder, title):
-    image = cv.imread(f'{folder}/{title}.png')
+def read_image(title):
+    filename = f'{title}.png'
+    blob = container_client.download_blob(filename).readall()
+    x = blob_to_array(blob)
+    # decode the array into an image
+    image = cv.imdecode(x, cv.IMREAD_UNCHANGED)
     return image
+
 
 def projection(gray_img, axis: str = 'horizontal'):
     """ Compute the horizontal or the vertical projection of a gray image """
@@ -188,7 +219,6 @@ def word_vertical_projection(line_image, cut=3):
     line_words = projection_segmentation(line_image, axis='vertical', cut=cut)
     line_words.reverse()
 
-    return line_words
 
 
 def extract_words(img, visual=0):
@@ -198,7 +228,7 @@ def extract_words(img, visual=0):
     for idx, line in enumerate(lines):
 
         if visual:
-            save_image(line, LINES_UPLOAD_FOLDER, f'line{idx}')
+            save_image(line, f'line{idx}')
 
     #     line_words = word_vertical_projection(line)
     #     for w in line_words:
@@ -228,13 +258,24 @@ def predict():
     if file.filename == '':
         return "No image selected for uploading"
     if file and allowed_file(file.filename):
+
         filename = secure_filename(file.filename)
-        file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
-        file.save(os.path.join(app.config['WORDS_UPLOAD_FOLDER'], filename))
-        file.save(os.path.join(app.config['LINES_UPLOAD_FOLDER'], filename))
-        print('upload_image filename: ' + app.config['UPLOAD_FOLDER'] + filename)
-        img_path = app.config['UPLOAD_FOLDER'] + filename
-        image = cv.imread(img_path)
+        # file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+        # file.save(os.path.join(app.config['WORDS_UPLOAD_FOLDER'], filename))
+        # file.save(os.path.join(app.config['LINES_UPLOAD_FOLDER'], filename))
+        # Uploading file in azure
+        # upload the file to the container using the filename as the blob name
+        container_client.upload_blob(filename, file, overwrite=True)
+        print('uploaded')
+
+        # Fetching the file url
+        blob = container_client.download_blob(filename).readall()
+        x = blob_to_array(blob)
+        # decode the array into an image
+        image = cv.imdecode(x, cv.IMREAD_UNCHANGED)
+
+        # print(img_path)
+        # image = cv.imread(img_path)
 
         # segmentation
         lines = extract_words(image, 1)
@@ -246,14 +287,16 @@ def predict():
                                                      export_dir='model_pb')
         output_text = ""
         for idx, line in enumerate(lines):
-            image = read_image(line, LINES_UPLOAD_FOLDER, f'line{idx}')
+            image = read_image(f'line{idx}')
+            image = image.reshape(image.shape[0], image.shape[1], 1)
+
             # Get Predicted Text
             resized_image = tf.compat.v1.image.resize_image_with_pad(image, 64, 1024).eval(session=sess)
-            img_gray = cv.cvtColor(resized_image, cv.COLOR_RGB2GRAY).reshape(64, 1024, 1)
+            # img_gray = cv.cvtColor(resized_image, cv.COLOR_RGB2GRAY).reshape(64, 1024, 1)
 
             output = sess.run('Dense-Decoded/SparseToDense:0',
                               feed_dict={
-                                  'Deep-CNN/Placeholder:0': img_gray
+                                  'Deep-CNN/Placeholder:0': resized_image
                               })
             out = dense_to_text(output[0])
             output_text += out
