@@ -246,9 +246,6 @@ def extract_words(img, visual=0):
     return lines
 
 
-
-
-
 @app.route('/')
 def home():
     return "Hello World"
