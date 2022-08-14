@@ -2,7 +2,7 @@ import base64
 import os
 import cv2 as cv
 import tensorflow as tf
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, redirect, flash
 from werkzeug.utils import secure_filename
 from werkzeug.datastructures import ImmutableMultiDict
 from scipy.ndimage import interpolation as inter
@@ -253,14 +253,18 @@ def home():
 
 @app.route('/predict', methods=['POST'])
 def predict():
-    if 'content' not in request.form:
-        return 'No file part'
-    data = dict(request.form)
-    img = data['content']
-    file = base64.b64decode(img)
-    filename = secure_filename('uploadedImage.png')
-
-    if file and allowed_file(filename):
+    if 'file' not in request.files:
+        flash('no file found')
+        return redirect(request.url)
+    # data = dict(request.form)
+    # img = data['content']
+    file = request.files['file']
+    # filename = secure_filename('uploadedImage.png')
+    if file.filename == "":
+        flash('no image selected')
+        return redirect(request.url)
+    if file and allowed_file(file.filename):
+        filename = secure_filename(file.filename)
         # file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
         # file.save(os.path.join(app.config['WORDS_UPLOAD_FOLDER'], filename))
         # file.save(os.path.join(app.config['LINES_UPLOAD_FOLDER'], filename))
