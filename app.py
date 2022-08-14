@@ -284,7 +284,7 @@ def predict():
 
         # segmentation
         lines = extract_words(image, 1)
-
+        print('lines upload complete')
         # Loading Model
         tf.compat.v1.disable_eager_execution()
         sess = tf.compat.v1.Session()
@@ -294,18 +294,19 @@ def predict():
         for idx, line in enumerate(lines):
             image = read_image(f'line{idx}')
             image = image.reshape(image.shape[0], image.shape[1], 1)
-
+            print('fetched resized image')
             # Get Predicted Text
             resized_image = tf.compat.v1.image.resize_image_with_pad(image, 64, 1024).eval(session=sess)
             # img_gray = cv.cvtColor(resized_image, cv.COLOR_RGB2GRAY).reshape(64, 1024, 1)
-
+            print('added padding')
             output = sess.run('Dense-Decoded/SparseToDense:0',
                               feed_dict={
                                   'Deep-CNN/Placeholder:0': resized_image
                               })
+            print('got output')
             out = dense_to_text(output[0])
             output_text += out
-
+            print(output_text)
         output_text = {'output_text': output_text}
         return jsonify(output_text)
     else:
