@@ -1,8 +1,10 @@
+import base64
 import os
 import cv2 as cv
 import tensorflow as tf
 from flask import Flask, jsonify, request
 from werkzeug.utils import secure_filename
+from werkzeug.datastructures import ImmutableMultiDict
 from scipy.ndimage import interpolation as inter
 from PIL import Image as im
 import numpy as np
@@ -220,7 +222,6 @@ def word_vertical_projection(line_image, cut=3):
     line_words.reverse()
 
 
-
 def extract_words(img, visual=0):
     lines = line_horizontal_projection(img)
     words = []
@@ -245,6 +246,9 @@ def extract_words(img, visual=0):
     return lines
 
 
+
+
+
 @app.route('/')
 def home():
     return "Hello World"
@@ -252,14 +256,14 @@ def home():
 
 @app.route('/predict', methods=['POST'])
 def predict():
-    if 'file' not in request.files:
+    if 'content' not in request.form:
         return 'No file part'
-    file = request.files['file']
-    if file.filename == '':
-        return "No image selected for uploading"
-    if file and allowed_file(file.filename):
+    data = dict(request.form)
+    img = data['content']
+    file = base64.b64decode(img)
+    filename = secure_filename('uploadedImage.png')
 
-        filename = secure_filename(file.filename)
+    if file and allowed_file(filename):
         # file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
         # file.save(os.path.join(app.config['WORDS_UPLOAD_FOLDER'], filename))
         # file.save(os.path.join(app.config['LINES_UPLOAD_FOLDER'], filename))
