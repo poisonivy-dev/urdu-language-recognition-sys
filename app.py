@@ -14,7 +14,7 @@ app = Flask(__name__)
 
 # Setting Up Azure Blob
 
-connect_str = "DefaultEndpointsProtocol=https;AccountName=ulrs2117345582;AccountKey=DVpEvHHNMCfrv/J3s6XK0NEvXqWAHurPkvFUdHdldgToHndiN9AnulueYWo1kjrNf+uFQrya747k+AStmjqtpA==;EndpointSuffix=core.windows.net"
+connect_str = ""
 container_name = "uploads"
 
 # create a blob service client to interact with the storage account
