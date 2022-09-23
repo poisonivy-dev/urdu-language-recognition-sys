@@ -1,23 +1,21 @@
-import base64
 import os
 import cv2 as cv
 import tensorflow as tf
 from flask import Flask, jsonify, request, redirect, flash
 from werkzeug.utils import secure_filename
-from werkzeug.datastructures import ImmutableMultiDict
 from scipy.ndimage import interpolation as inter
 from PIL import Image as im
 import numpy as np
 from azure.storage.blob import BlobServiceClient
+from decouple import config
 
 app = Flask(__name__)
 
-# Setting Up Azure Blob
-
-connect_str = "DefaultEndpointsProtocol=https;AccountName=ulrs2117345582;AccountKey=DVpEvHHNMCfrv/J3s6XK0NEvXqWAHurPkvFUdHdldgToHndiN9AnulueYWo1kjrNf+uFQrya747k+AStmjqtpA==;EndpointSuffix=core.windows.net"
+# ------------  Setting Up Azure Blob ----------------------
+connect_str = config('AZURE_STORAGE_CONNECTION_STRING')
 container_name = "uploads"
 
-# create a blob service client to interact with the storage account
+# Create a blob service client to interact with the storage account
 blob_service_client = BlobServiceClient.from_connection_string(conn_str=connect_str)
 try:
     # get container client to interact with the container in which images will be stored
@@ -28,6 +26,7 @@ except Exception as e:
     # create a container in the storage account if it does not exist
     container_client = blob_service_client.create_container(container_name)
 
+# ------ Create folders for saving images -----------
 # path = os.getcwd()
 # UPLOAD_FOLDER = os.path.join(path, 'uploads\\')
 # if not os.path.isdir(UPLOAD_FOLDER):
@@ -42,10 +41,11 @@ except Exception as e:
 #     os.mkdir(LINES_UPLOAD_FOLDER)
 
 app.secret_key = "secret key"
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 # app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 # app.config['LINES_UPLOAD_FOLDER'] = LINES_UPLOAD_FOLDER
 # app.config['WORDS_UPLOAD_FOLDER'] = WORDS_UPLOAD_FOLDER
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
+
 
 ALLOWED_EXTENSIONS = set(['png', 'jpg', 'jpeg'])
 
@@ -76,7 +76,7 @@ def dense_to_text(dense):
 
 # Converting image to a binary image
 def binary_otsus(image, filter: int = 1):
-    # """Binarize an image 0's and 255's using Otsu's Binarization"""
+    # ----Binarize an image 0's and 255's using Otsu's Binarization ----
 
     if len(image.shape) == 3:
         gray_img = cv.cvtColor(image, cv.COLOR_BGR2GRAY)
@@ -90,10 +90,6 @@ def binary_otsus(image, filter: int = 1):
     else:
         binary_img = cv.threshold(gray_img, 0, 255, cv.THRESH_BINARY + cv.THRESH_OTSU)[1]
 
-    # Morphological Opening
-    # kernel = np.ones((3,3),np.uint8)
-    # clean_img = cv.morphologyEx(binary_img, cv.MORPH_OPEN, kernel)
-
     return binary_img
 
 
@@ -106,11 +102,7 @@ def find_score(arr, angle):
 
 def deskew(binary_img):
     ht, wd = binary_img.shape
-    # _, binary_img = cv.threshold(img, 127, 255, cv.THRESH_BINARY)
-
-    # pix = np.array(img.convert('1').getdata(), np.uint8)
     bin_img = (binary_img // 255.0)
-
     delta = 0.1
     limit = 3
     angles = np.arange(-limit, limit + delta, delta)
@@ -162,8 +154,10 @@ def projection(gray_img, axis: str = 'horizontal'):
 
 
 def preprocess(image):
+    gray_img = image
     # Maybe we end up using only gray level image.
-    gray_img = cv.cvtColor(image, cv.COLOR_BGR2GRAY)
+    if (len(image.shape) > 2):
+        gray_img = cv.cvtColor(image, cv.COLOR_BGR2GRAY)
     gray_img = cv.bitwise_not(gray_img)
 
     binary_img = binary_otsus(gray_img, 0)
@@ -220,6 +214,7 @@ def line_horizontal_projection(image, cut=3):
 def word_vertical_projection(line_image, cut=3):
     line_words = projection_segmentation(line_image, axis='vertical', cut=cut)
     line_words.reverse()
+    return line_words
 
 
 def extract_words(img, visual=0):
@@ -231,17 +226,18 @@ def extract_words(img, visual=0):
         if visual:
             save_image(line, f'line{idx}')
 
-    #     line_words = word_vertical_projection(line)
-    #     for w in line_words:
-    #         # if len(words) == 585:
-    #         #     print(idx)
-    #         words.append((w, line))
-    #     # words.extend(line_words)
-    #
-    # # breakpoint()
-    # if visual:
-    #     for idx, word in enumerate(words):
-    #         save_image(word[0], WORDS_UPLOAD_FOLDER, f'word{idx}')
+        line_words = word_vertical_projection(line)
+        for w in line_words:
+            # if len(words) == 585:
+            #     print(idx)
+            words.append((w, line))
+        # words.extend(line_words)
+
+    # breakpoint()
+    if visual:
+        for idx, word in enumerate(words):
+            # save_image(word[0], WORDS_UPLOAD_FOLDER, f'word{idx}')
+            save_image(word[0], f'word{idx}')
 
     return lines
 
@@ -256,10 +252,7 @@ def predict():
     if 'file' not in request.files:
         flash('no file found')
         return redirect(request.url)
-    # data = dict(request.form)
-    # img = data['content']
     file = request.files['file']
-    # filename = secure_filename('uploadedImage.png')
     if file.filename == "":
         flash('no image selected')
         return redirect(request.url)
@@ -268,7 +261,7 @@ def predict():
         # file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
         # file.save(os.path.join(app.config['WORDS_UPLOAD_FOLDER'], filename))
         # file.save(os.path.join(app.config['LINES_UPLOAD_FOLDER'], filename))
-        # Uploading file in azure
+        # ---------- Uploading file in azure --------
         # upload the file to the container using the filename as the blob name
         container_client.upload_blob(filename, file, overwrite=True)
         print('uploaded')
@@ -279,10 +272,7 @@ def predict():
         # decode the array into an image
         image = cv.imdecode(x, cv.IMREAD_UNCHANGED)
 
-        # print(img_path)
-        # image = cv.imread(img_path)
-
-        # segmentation
+        # ----------- segmentation -------------
         lines = extract_words(image, 1)
         print('lines upload complete')
         # Loading Model
@@ -297,7 +287,6 @@ def predict():
             print('fetched resized image')
             # Get Predicted Text
             resized_image = tf.compat.v1.image.resize_image_with_pad(image, 64, 1024).eval(session=sess)
-            # img_gray = cv.cvtColor(resized_image, cv.COLOR_RGB2GRAY).reshape(64, 1024, 1)
             print('added padding')
             output = sess.run('Dense-Decoded/SparseToDense:0',
                               feed_dict={
@@ -305,12 +294,12 @@ def predict():
                               })
             print('got output')
             out = dense_to_text(output[0])
-            output_text += out
+            output_text += out + "\n"
             print(output_text)
         output_text = {'output_text': output_text}
         return jsonify(output_text)
     else:
-        return "Allowed image types are - png, jpg, jpeg, gif"
+        return "Allowed image types are - png, jpg, jpeg"
 
 
 if __name__ == '__main__':
